@@ -153,7 +153,10 @@ const getDefaultCSResponse = (reason, source) => {
 
 const App = () => {
   const [user, setUser] = useState(null);
-  const [view, setView] = useState('cs'); 
+  const [view, setView] = useState(() => {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('view') || 'cs';
+});
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [connectionError, setConnectionError] = useState(false);
