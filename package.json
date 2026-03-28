@@ -1,0 +1,29 @@
+{
+  "name": "bringo-flash-control",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Flash-Control: Incident Management System for Bringo Delivery",
+  "author": "Bringo by Carrefour / LabelVie",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "firebase": "^10.8.1",
+    "lucide-react": "^0.383.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.0.8",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.3.6"
+  }
+}
