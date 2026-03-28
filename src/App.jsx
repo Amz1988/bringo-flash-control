@@ -45,7 +45,15 @@ import {
 } from 'lucide-react';
 
 // --- CONFIGURATION FIREBASE ---
-const firebaseConfig = JSON.parse(__firebase_config);
+const firebaseConfig = {
+  "apiKey": "AIzaSyCmGabYVQsicDjhCP4Qx_w41B0ToAZxELM",
+  "authDomain": "bringo-flash-control.firebaseapp.com",
+  "projectId": "bringo-flash-control",
+  "storageBucket": "bringo-flash-control.firebasestorage.app",
+  "messagingSenderId": "1007988352826",
+  "appId": "1:1007988352826:web:1b1ce84d1554b08756d203",
+  "measurementId": "G-1PEVCF443T"
+};
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
