@@ -279,7 +279,7 @@ const App = () => {
         </div>
       )}
 
-      <div className="max-w-5xl mx-auto p-4 md:p-8">
+      <div className="max-w-6xl mx-auto p-4 md:p-8">
         {/* === VUE SUPPORT CLIENT === */}
         {view === 'cs' && (
           <div className="space-y-6">
@@ -358,125 +358,86 @@ const App = () => {
 
         {/* === VUE TERMINAL TERRAIN === */}
         {view === 'requester' && (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3 italic uppercase tracking-tighter mb-8">
-              <Truck className="text-orange-500" size={28}/> Terminal Terrain
-            </h2>
-
-            {requests.filter(r => r.status === 'pending' || r.status === 'replied').length === 0 ? (
-              <div className="bg-white p-12 rounded-[2.5rem] border border-slate-200 text-center">
-                <Package className="mx-auto text-slate-300 mb-4" size={48} />
-                <p className="text-slate-500 font-black text-sm">Aucun incident en cours</p>
+          <div className="grid md:grid-cols-2 gap-8 items-start">
+            <div className="bg-white p-8 rounded-[3rem] shadow-xl border border-slate-100 sticky top-24 h-fit">
+              <h2 className="text-2xl font-black mb-8 italic uppercase text-slate-900 tracking-tighter">Signalement</h2>
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <button onClick={() => setFormData({...formData, source: 'Livreur', reason: ''})} className={`py-5 rounded-[1.5rem] text-[11px] font-black border-2 transition-all ${formData.source === 'Livreur' ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 border-slate-50'}`}>LIVREUR</button>
+                  <button onClick={() => setFormData({...formData, source: 'Magasin', reason: ''})} className={`py-5 rounded-[1.5rem] text-[11px] font-black border-2 transition-all ${formData.source === 'Magasin' ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 border-slate-50'}`}>MAGASIN</button>
+                </div>
+                <div className="bg-slate-50 p-5 rounded-[1.5rem] border-2 border-slate-100 focus-within:border-blue-500 transition-all">
+                  <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">N° COMMANDE</label>
+                  <input value={formData.orderId} onChange={e => setFormData({...formData, orderId: e.target.value})} className="w-full bg-transparent font-black text-2xl outline-none" placeholder="00000"/>
+                </div>
+                <div className="space-y-3">
+                  {reasonsBySource[formData.source]?.map(r => (
+                    <button key={r} onClick={() => setFormData({...formData, reason: r})} className={`w-full text-left p-6 rounded-[1.5rem] text-sm font-black border-2 transition-all flex items-center justify-between ${formData.reason === r ? 'bg-slate-900 border-slate-900 text-white shadow-xl' : 'bg-white border-slate-100 text-slate-600 hover:border-slate-200'}`}>
+                      {r} <ChevronRight size={18}/>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={async () => {
+                  if(!user || !formData.reason || !formData.orderId) return;
+                  try {
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), { ...formData, status: 'pending', timestamp: serverTimestamp() });
+                    setFormData({ ...formData, orderId: '', reason: '' });
+                  } catch (e) { console.error(e); }
+                }} className={`w-full py-6 rounded-[2rem] font-black text-xs uppercase tracking-[0.3em] transition-all ${formData.reason && formData.orderId ? 'bg-blue-600 text-white shadow-2xl' : 'bg-slate-100 text-slate-200'}`}>Envoyer au Support</button>
               </div>
-            ) : (
+            </div>
+            
+            <div className="space-y-6">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-4 italic"><History size={16}/> Réponses en Temps Réel</h3>
               <div className="space-y-4">
-                {requests.filter(r => r.status === 'pending' || r.status === 'replied').map(req => (
-                  <div key={`terrain-${req.docId}`} className="bg-white rounded-[2.5rem] border-2 shadow-xl overflow-hidden transition-all hover:shadow-2xl">
-                    {/* En-tête cliquable */}
-                    <button 
-                      onClick={() => toggleTicketExpand(req.docId)}
-                      className="w-full p-6 flex items-center justify-between hover:bg-slate-50 transition-colors text-left"
-                    >
-                      <div className="flex items-center gap-4 flex-1">
-                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-lg ${req.source === 'Livreur' ? 'bg-indigo-600' : 'bg-blue-600'}`}>
-                          {req.orderId.toString().slice(-2)}
+                {requests.slice(0, 10).map(req => (
+                  <div key={`${req.docId}-${req.status}`} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-xl overflow-hidden transition-all duration-500">
+                    <div className="flex justify-between items-center mb-4">
+                      <div className="flex items-center gap-2">
+                         <span className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${req.source === 'Livreur' ? 'bg-purple-500' : 'bg-blue-500'}`}>{req.source === 'Livreur' ? <Truck size={14}/> : <Store size={14}/>}</span>
+                         <span className="text-[10px] font-black text-slate-400 tracking-tighter">CMD #{req.orderId}</span>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase ${req.csResponse ? 'bg-emerald-500 text-white animate-bounce' : 'bg-slate-100 text-slate-400'}`}>
+                        {req.csResponse ? 'RÉPONSE DISPONIBLE' : 'ANALYSE EN COURS'}
+                      </span>
+                    </div>
+
+                    <h4 className="text-xl font-black text-slate-800 mb-2">{req.reason}</h4>
+                    
+                    {req.csResponse ? (
+                      <div className="mt-4 pt-4 border-t-2 border-dashed border-slate-100 bg-emerald-50/30 -mx-6 px-6 pb-6 animate-in fade-in zoom-in duration-500">
+                        <div className="flex items-center gap-2 mb-3 mt-2">
+                          <BellRing size={16} className="text-emerald-600"/>
+                          <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Instruction Support Client</p>
                         </div>
-                        <div className="flex-1">
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-1">CMD #{req.orderId}</p>
-                          <h3 className="text-lg font-black text-slate-900">{req.reason}</h3>
+                        
+                        <div className="bg-white p-5 rounded-2xl mb-4 border-2 border-emerald-100 shadow-sm relative">
+                           <p className="text-sm font-bold text-slate-700 leading-relaxed italic">"{req.csResponse}"</p>
+                           <div className="absolute -top-2 -right-2 bg-emerald-500 text-white p-1 rounded-full shadow-lg"><CheckCircle2 size={12}/></div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase ${
-                            req.csResponse 
-                              ? 'bg-emerald-500 text-white animate-pulse' 
-                              : 'bg-amber-500 text-white animate-bounce'
-                          }`}>
-                            {req.csResponse ? '✓ RÉPONSE' : 'EN ATTENTE'}
-                          </span>
-                          <ChevronRight className={`text-slate-300 transition-transform ${expandedTickets[req.docId] ? 'rotate-90' : ''}`} size={20} />
+                        
+                        <div className={`w-full py-5 px-4 rounded-2xl text-[11px] font-black border-2 transition-all flex items-center justify-center gap-3 shadow-xl ${
+                             ['COMMANDE ANNULEA', 'OK POUR ANNULER'].includes(req.csAction) ? 'bg-red-600 border-red-600 text-white' : 
+                             ['PREPARER COMMANDE', 'RELIVRER ASAP', 'REPASSER COMMANDE'].includes(req.csAction) ? 'bg-emerald-600 border-emerald-600 text-white' : 
+                             'bg-slate-900 border-slate-900 text-white'
+                        }`}>
+                             {req.csAction === 'APPELER CLIENT' && <Phone size={18}/>}
+                             {req.csAction === 'REPASSER COMMANDE' && <RefreshCcw size={18}/>}
+                             {req.csAction === 'COMMANDE ANNULEA' && <XCircle size={18}/>}
+                             {req.csAction === 'PREPARER COMMANDE' && <PackageCheck size={18}/>}
+                             <span className="uppercase tracking-[0.1em] text-lg font-black">{req.csAction}</span>
                         </div>
                       </div>
-                    </button>
-
-                    {/* Contenu développé */}
-                    {expandedTickets[req.docId] && (
-                      <div className="border-t-2 border-slate-100 p-8 bg-gradient-to-br from-slate-50 to-white space-y-6 animate-in fade-in duration-300">
-                        {/* Source et timing */}
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-white p-4 rounded-2xl border border-slate-100">
-                            <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Source</p>
-                            <p className="text-lg font-black text-slate-900">{req.source === 'Livreur' ? '🚚 Livreur' : '🏪 Magasin'}</p>
-                          </div>
-                          <div className="bg-white p-4 rounded-2xl border border-slate-100">
-                            <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Statut</p>
-                            <p className="text-lg font-black text-slate-900">{req.status === 'replied' ? '✓ Analysé' : '⏳ Analyse'}</p>
-                          </div>
-                        </div>
-
-                        {/* Réponse Support Client si disponible */}
-                        {req.csResponse ? (
-                          <div className="bg-emerald-50 border-2 border-emerald-200 rounded-[2rem] p-8 space-y-5">
-                            <div className="flex items-center gap-3 mb-4">
-                              <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center">
-                                <BellRing size={18} className="text-white" />
-                              </div>
-                              <p className="text-[11px] font-black text-emerald-700 uppercase tracking-widest">Instruction Support Client</p>
-                            </div>
-
-                            <div className="bg-white p-6 rounded-2xl border-2 border-emerald-200 shadow-sm">
-                              <p className="text-sm font-bold text-slate-700 leading-relaxed italic">"{req.csResponse}"</p>
-                            </div>
-
-                            {/* Action à exécuter */}
-                            {req.csAction && (
-                              <div className={`w-full py-6 px-4 rounded-[1.5rem] text-[12px] font-black border-2 transition-all flex items-center justify-center gap-3 shadow-lg ${
-                                ['COMMANDE ANNULEE', 'OK POUR ANNULER'].includes(req.csAction) 
-                                  ? 'bg-red-600 border-red-600 text-white' 
-                                  : ['PREPARER COMMANDE', 'RELIVRER ASAP', 'REPASSER COMMANDE', 'CHERCHER SUBST.'].includes(req.csAction) 
-                                    ? 'bg-emerald-600 border-emerald-600 text-white' 
-                                    : 'bg-slate-900 border-slate-900 text-white'
-                              }`}>
-                                {req.csAction === 'APPELER CLIENT' && <Phone size={20} />}
-                                {req.csAction === 'REPASSER COMMANDE' && <RefreshCcw size={20} />}
-                                {req.csAction === 'RELIVRER ASAP' && <Truck size={20} />}
-                                {req.csAction === 'COMMANDE ANNULEE' && <XCircle size={20} />}
-                                {req.csAction === 'OK POUR ANNULER' && <XCircle size={20} />}
-                                {req.csAction === 'PREPARER COMMANDE' && <PackageCheck size={20} />}
-                                {req.csAction === 'CHERCHER SUBST.' && <Search size={20} />}
-                                {req.csAction === 'LAISSER AVIS' && <BellRing size={20} />}
-                                {req.csAction === 'RELOCALISER LIVR.' && <MapPin size={20} />}
-                                {req.csAction === 'RELANCER PAIEMENT' && <DollarSign size={20} />}
-                                {req.csAction === 'RELANCER PREP.' && <Clock size={20} />}
-                                {req.csAction === 'VERIFIER MONTANT' && <DollarSign size={20} />}
-                                <span className="uppercase tracking-[0.1em] text-lg">{req.csAction}</span>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="bg-amber-50 border-2 border-amber-200 rounded-[2rem] p-8 flex items-center justify-center gap-4">
-                            <Loader2 size={20} className="animate-spin text-amber-500" />
-                            <p className="text-[12px] font-black text-amber-700 uppercase tracking-widest">Analyse du Support en cours...</p>
-                          </div>
-                        )}
-
-                        {/* Actions d'exécution */}
-                        {req.csResponse && (
-                          <div className="pt-4 border-t-2 border-slate-100">
-                            <button 
-                              onClick={() => markResolved(req.docId)}
-                              className="w-full py-5 bg-emerald-500 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-lg flex items-center justify-center gap-2"
-                            >
-                              <CheckCircle2 size={18} />
-                              Marquer comme Résolu
-                            </button>
-                          </div>
-                        )}
+                    ) : (
+                      <div className="mt-4 flex items-center justify-center gap-3 py-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <Loader2 size={16} className="animate-spin text-slate-300"/>
+                        <p className="text-[11px] font-bold text-slate-400 italic">Analyse Support en cours...</p>
                       </div>
                     )}
                   </div>
                 ))}
               </div>
-            )}
+            </div>
           </div>
         )}
       </div>
