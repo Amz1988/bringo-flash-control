@@ -166,11 +166,7 @@ const App = () => {
   useEffect(() => {
     const initAuth = async (retries = 5, delay = 1000) => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        await signInAnonymously(auth);
       } catch (e) {
         if (retries > 0) {
           setTimeout(() => initAuth(retries - 1, delay * 2), delay);
