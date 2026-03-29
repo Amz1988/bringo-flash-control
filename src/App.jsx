@@ -41,7 +41,8 @@ import {
   AlertTriangle,
   CheckIcon,
   DollarSign,
-  Package
+  Package,
+  User
 } from 'lucide-react';
 
 // --- CONFIGURATION FIREBASE ---
@@ -76,7 +77,6 @@ const reasonsBySource = {
 
 // --- ACTIONS CONTEXTUELLES PAR MOTIF ---
 const getActionsForReason = (reason, source) => {
-  // Actions spécifiques Magasin
   if (source === "Magasin" || reason === "Rupture / Annulation Client") {
     return [
       { label: "COMMANDE ANNULEE", color: "red", icon: "XCircle" },
@@ -85,7 +85,6 @@ const getActionsForReason = (reason, source) => {
     ];
   }
 
-  // Actions spécifiques aux motifs livreur
   const actionMap = {
     "Client injoignable": [
       { label: "APPELER CLIENT", color: "slate", icon: "Phone" },
@@ -153,17 +152,23 @@ const getDefaultCSResponse = (reason, source) => {
 
 const App = () => {
   const [user, setUser] = useState(null);
-  const [view, setView] = useState(() => {
-  const params = new URLSearchParams(window.location.search);
-  return params.get('view') || 'cs';
-});
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [connectionError, setConnectionError] = useState(false);
 
-  const [formData, setFormData] = useState({ orderId: '', source: 'Livreur', reason: '', details: '' });
-  const [responseInput, setResponseInput] = useState({ id: null, text: '', action: '' });
+  const [formData, setFormData] = useState({ orderId: '', source: 'Livreur', reason: '', name: '' });
+  const [responseInput, setResponseInput] = useState({ id: null, text: '', action: '', agentName: '' });
   const [expandedTickets, setExpandedTickets] = useState({});
+
+  // Déterminer la vue depuis l'URL
+  const getViewFromURL = () => {
+    if (typeof window === 'undefined') return 'cs';
+    const params = new URLSearchParams(window.location.search);
+    const viewParam = params.get('view');
+    return viewParam === 'requester' ? 'requester' : 'cs';
+  };
+
+  const [view] = useState(getViewFromURL());
 
   // 1. Authentification avec Retry
   useEffect(() => {
@@ -217,16 +222,17 @@ const App = () => {
   }, [user]);
 
   const handleCSResponse = async (docId, reason, source) => {
-    if (!user || !responseInput.text.trim() || !responseInput.action) return;
+    if (!user || !responseInput.text.trim() || !responseInput.action || !responseInput.agentName.trim()) return;
     try {
       const ticketRef = doc(db, 'artifacts', appId, 'public', 'data', 'tickets', docId);
       await updateDoc(ticketRef, {
         status: 'replied',
         csResponse: responseInput.text,
         csAction: responseInput.action,
+        agentName: responseInput.agentName,
         respondedAt: serverTimestamp()
       });
-      setResponseInput({ id: null, text: '', action: '' });
+      setResponseInput({ id: null, text: '', action: '', agentName: '' });
     } catch (e) { console.error(e); }
   };
 
@@ -265,14 +271,14 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-10">
+      {/* NAV - SANS ONGLETS */}
       <nav className="bg-slate-900 text-white p-4 flex justify-between items-center sticky top-0 z-50 shadow-xl">
         <div className="flex items-center gap-3">
           <div className="bg-orange-500 p-1.5 rounded-lg"><ShieldCheck size={20}/></div>
           <span className="font-black tracking-tighter text-xl uppercase italic">Flash-Control</span>
         </div>
-        <div className="flex bg-slate-800 p-1 rounded-xl">
-          <button onClick={() => setView('requester')} className={`px-5 py-2 rounded-lg text-[11px] font-black transition-all ${view === 'requester' ? 'bg-orange-500 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>TERMINAL TERRAIN</button>
-          <button onClick={() => setView('cs')} className={`px-5 py-2 rounded-lg text-[11px] font-black transition-all ${view === 'cs' ? 'bg-orange-500 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>SUPPORT CLIENT (CS)</button>
+        <div className="text-[12px] font-black text-orange-400 uppercase tracking-widest">
+          {view === 'requester' ? '🚚 TERMINAL TERRAIN' : '💬 SUPPORT CLIENT'}
         </div>
       </nav>
 
@@ -303,6 +309,10 @@ const App = () => {
                   </div>
                   <div className="flex justify-between items-start mb-6">
                     <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <User size={14} className="text-slate-400"/>
+                        <span className="text-xs font-black text-slate-500">{req.name}</span>
+                      </div>
                       <span className="text-xs font-black text-orange-500 bg-orange-50 px-2 py-1 rounded">CMD #{req.orderId}</span>
                       <h3 className="text-2xl font-black text-slate-900 mt-2">{req.reason}</h3>
                     </div>
@@ -321,6 +331,16 @@ const App = () => {
                       value={responseInput.id === req.docId ? responseInput.text : (req.csResponse || '')}
                       onChange={e => setResponseInput({ ...responseInput, id: req.docId, text: e.target.value })}
                     />
+
+                    <div className="bg-slate-50 p-5 rounded-[1.5rem] border-2 border-slate-100 focus-within:border-orange-500 transition-all">
+                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">NOM DE L'AGENT</label>
+                      <input 
+                        value={responseInput.id === req.docId ? responseInput.agentName : ''} 
+                        onChange={e => setResponseInput({ ...responseInput, id: req.docId, agentName: e.target.value })} 
+                        className="w-full bg-transparent font-black text-lg outline-none" 
+                        placeholder="Votre nom"
+                      />
+                    </div>
                     
                     <div>
                       <p className="text-[10px] font-black text-slate-400 uppercase mb-3">Actions recommandées</p>
@@ -331,7 +351,8 @@ const App = () => {
                             onClick={() => setResponseInput({ 
                               id: req.docId, 
                               text: responseInput.id === req.docId ? responseInput.text : (req.csResponse || ''), 
-                              action: act.label 
+                              action: act.label,
+                              agentName: responseInput.id === req.docId ? responseInput.agentName : ''
                             })}
                             className={`px-4 py-3 rounded-xl text-[9px] font-black border-2 transition-all ${
                               (responseInput.id === req.docId ? responseInput.action : req.csAction) === act.label 
@@ -347,8 +368,8 @@ const App = () => {
 
                     <button 
                       onClick={() => handleCSResponse(req.docId, req.reason, req.source)}
-                      disabled={responseInput.id !== req.docId || !responseInput.text.trim() || !responseInput.action}
-                      className={`w-full py-5 rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all ${responseInput.id === req.docId && responseInput.text.trim() && responseInput.action ? 'bg-orange-500 text-white shadow-xl' : 'bg-slate-100 text-slate-300'}`}
+                      disabled={responseInput.id !== req.docId || !responseInput.text.trim() || !responseInput.action || !responseInput.agentName.trim()}
+                      className={`w-full py-5 rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all ${responseInput.id === req.docId && responseInput.text.trim() && responseInput.action && responseInput.agentName.trim() ? 'bg-orange-500 text-white shadow-xl' : 'bg-slate-100 text-slate-300'}`}
                     >
                       Envoyer au Terrain
                     </button>
@@ -365,6 +386,11 @@ const App = () => {
             <div className="bg-white p-8 rounded-[3rem] shadow-xl border border-slate-100 sticky top-24 h-fit">
               <h2 className="text-2xl font-black mb-8 italic uppercase text-slate-900 tracking-tighter">Signalement</h2>
               <div className="space-y-6">
+                <div className="bg-slate-50 p-5 rounded-[1.5rem] border-2 border-slate-100 focus-within:border-blue-500 transition-all">
+                  <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">VOTRE NOM</label>
+                  <input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-transparent font-black text-lg outline-none" placeholder="Nom"/>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <button onClick={() => setFormData({...formData, source: 'Livreur', reason: ''})} className={`py-5 rounded-[1.5rem] text-[11px] font-black border-2 transition-all ${formData.source === 'Livreur' ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 border-slate-50'}`}>LIVREUR</button>
                   <button onClick={() => setFormData({...formData, source: 'Magasin', reason: ''})} className={`py-5 rounded-[1.5rem] text-[11px] font-black border-2 transition-all ${formData.source === 'Magasin' ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 border-slate-50'}`}>MAGASIN</button>
@@ -381,19 +407,19 @@ const App = () => {
                   ))}
                 </div>
                 <button onClick={async () => {
-                  if(!user || !formData.reason || !formData.orderId) return;
+                  if(!user || !formData.reason || !formData.orderId || !formData.name.trim()) return;
                   try {
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), { ...formData, status: 'pending', timestamp: serverTimestamp() });
-                    setFormData({ ...formData, orderId: '', reason: '' });
+                    setFormData({ orderId: '', source: 'Livreur', reason: '', name: formData.name });
                   } catch (e) { console.error(e); }
-                }} className={`w-full py-6 rounded-[2rem] font-black text-xs uppercase tracking-[0.3em] transition-all ${formData.reason && formData.orderId ? 'bg-blue-600 text-white shadow-2xl' : 'bg-slate-100 text-slate-200'}`}>Envoyer au Support</button>
+                }} className={`w-full py-6 rounded-[2rem] font-black text-xs uppercase tracking-[0.3em] transition-all ${formData.reason && formData.orderId && formData.name.trim() ? 'bg-blue-600 text-white shadow-2xl' : 'bg-slate-100 text-slate-200'}`}>Envoyer au Support</button>
               </div>
             </div>
             
             <div className="space-y-6">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-4 italic"><History size={16}/> Réponses en Temps Réel</h3>
               <div className="space-y-4">
-                {requests.slice(0, 10).map(req => (
+                {requests.filter(r => r.name === formData.name).slice(0, 10).map(req => (
                   <div key={`${req.docId}-${req.status}`} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-xl overflow-hidden transition-all duration-500">
                     <div className="flex justify-between items-center mb-4">
                       <div className="flex items-center gap-2">
@@ -411,7 +437,9 @@ const App = () => {
                       <div className="mt-4 pt-4 border-t-2 border-dashed border-slate-100 bg-emerald-50/30 -mx-6 px-6 pb-6 animate-in fade-in zoom-in duration-500">
                         <div className="flex items-center gap-2 mb-3 mt-2">
                           <BellRing size={16} className="text-emerald-600"/>
-                          <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Instruction Support Client</p>
+                          <div>
+                            <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Réponse de {req.agentName || 'Support'}</p>
+                          </div>
                         </div>
                         
                         <div className="bg-white p-5 rounded-2xl mb-4 border-2 border-emerald-100 shadow-sm relative">
