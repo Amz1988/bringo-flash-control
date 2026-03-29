@@ -193,30 +193,37 @@ const App = () => {
 
   // Firestore Tickets Listener
   useEffect(() => {
-    if (!authUser) return;
-    
-    const ticketsCollection = collection(db, 'artifacts', appId, 'public', 'data', 'tickets');
-    
-    const unsubscribe = onSnapshot(ticketsCollection, 
-      (snapshot) => {
-        const docs = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
-        const sorted = docs.sort((a, b) => {
-          const timeA = a.timestamp?.seconds || 0;
-          const timeB = b.timestamp?.seconds || 0;
-          return timeB - timeA;
-        });
-        setRequests(sorted);
-        setConnectionError(false);
-      }, 
-      (error) => {
-        console.error("Firestore Error:", error);
-        setConnectionError(true);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      console.log('Auth User ID:', currentUser?.uid);
+      
+      if (currentUser) {
+        setAuthUser(currentUser);
+        try {
+          // On pointe bien sur 'Stores' avec la majuscule
+          const userDocRef = doc(db, 'Stores', currentUser.uid);
+          const userDoc = await getDoc(userDocRef);
+
+          if (userDoc.exists()) {
+            console.log('Profil trouvé :', userDoc.data());
+            setUserProfile(userDoc.data());
+          } else {
+            // Si l'ID est en italique dans Firebase, on arrive ici
+            console.error('ID reconnu par Auth mais absent de Firestore:', currentUser.uid);
+            setUserProfile(null);
+            // Optionnel : vous pourriez ajouter un setDoc ici pour créer le profil
+          }
+        } catch (e) {
+          console.error('Erreur technique Firestore:', e);
+          setUserProfile(null);
+        }
+      } else {
+        setAuthUser(null);
+        setUserProfile(null);
       }
-    );
-
+      setLoading(false);
+    });
     return () => unsubscribe();
-  }, [authUser]);
-
+  }, []);
   // Handle Login
   const handleLogin = async (e) => {
     e.preventDefault();
