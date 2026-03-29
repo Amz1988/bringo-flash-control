@@ -169,7 +169,7 @@ const App = () => {
       if (currentUser) {
         setAuthUser(currentUser);
         try {
-          const userDoc = await getDoc(doc(db, 'magasins', currentUser.uid));
+          const userDoc = await getDoc(doc(db, 'Stores', currentUser.uid));
           console.log('Firestore Doc exists:', userDoc.exists());
           console.log('Firestore Doc data:', userDoc.data());
           if (userDoc.exists()) {
