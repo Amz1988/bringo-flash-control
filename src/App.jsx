@@ -161,14 +161,15 @@ const App = () => {
   const [expandedTickets, setExpandedTickets] = useState({});
 
   // Déterminer la vue depuis l'URL
-  const getViewFromURL = () => {
-    if (typeof window === 'undefined') return 'cs';
-    const params = new URLSearchParams(window.location.search);
-    const viewParam = params.get('view');
-    return viewParam === 'requester' ? 'requester' : 'cs';
+  const getViewFromPath = () => {
+    if (typeof window === 'undefined') return 'support';
+    const path = window.location.pathname;
+    if (path.includes('/livreur')) return 'livreur';
+    if (path.includes('/support')) return 'support';
+    return 'support'; // défaut
   };
 
-  const [view] = useState(getViewFromURL());
+  const [view] = useState(getViewFromPath());
 
   // 1. Authentification avec Retry
   useEffect(() => {
@@ -271,14 +272,14 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-10">
-      {/* NAV - SANS ONGLETS */}
+      {/* NAV */}
       <nav className="bg-slate-900 text-white p-4 flex justify-between items-center sticky top-0 z-50 shadow-xl">
         <div className="flex items-center gap-3">
           <div className="bg-orange-500 p-1.5 rounded-lg"><ShieldCheck size={20}/></div>
           <span className="font-black tracking-tighter text-xl uppercase italic">Flash-Control</span>
         </div>
         <div className="text-[12px] font-black text-orange-400 uppercase tracking-widest">
-          {view === 'requester' ? '🚚 TERMINAL TERRAIN' : '💬 SUPPORT CLIENT'}
+          {view === 'livreur' ? '🚚 TERMINAL TERRAIN' : '💬 SUPPORT CLIENT'}
         </div>
       </nav>
 
@@ -290,7 +291,7 @@ const App = () => {
 
       <div className="max-w-6xl mx-auto p-4 md:p-8">
         {/* === VUE SUPPORT CLIENT === */}
-        {view === 'cs' && (
+        {view === 'support' && (
           <div className="space-y-6">
             <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3 italic uppercase tracking-tighter">
               <MessageSquare className="text-orange-500" size={28}/> File de Décision
@@ -381,7 +382,7 @@ const App = () => {
         )}
 
         {/* === VUE TERMINAL TERRAIN === */}
-        {view === 'requester' && (
+        {view === 'livreur' && (
           <div className="grid md:grid-cols-2 gap-8 items-start">
             <div className="bg-white p-8 rounded-[3rem] shadow-xl border border-slate-100 sticky top-24 h-fit">
               <h2 className="text-2xl font-black mb-8 italic uppercase text-slate-900 tracking-tighter">Signalement</h2>
