@@ -165,15 +165,22 @@ const App = () => {
   // Auth State Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      console.log('Auth User:', currentUser?.uid);
       if (currentUser) {
         setAuthUser(currentUser);
         try {
           const userDoc = await getDoc(doc(db, 'magasins', currentUser.uid));
+          console.log('Firestore Doc exists:', userDoc.exists());
+          console.log('Firestore Doc data:', userDoc.data());
           if (userDoc.exists()) {
             setUserProfile(userDoc.data());
+          } else {
+            console.error('Document does not exist for UID:', currentUser.uid);
+            setUserProfile(null);
           }
         } catch (e) {
           console.error('Erreur chargement profil:', e);
+          setUserProfile(null);
         }
       } else {
         setAuthUser(null);
