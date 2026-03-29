@@ -5,17 +5,15 @@ import {
   collection, 
   doc, 
   onSnapshot, 
-  query, 
   addDoc, 
   updateDoc,
   serverTimestamp,
-  enableIndexedDbPersistence,
-  terminate
+  getDoc
 } from 'firebase/firestore';
 import { 
   getAuth, 
-  signInAnonymously, 
-  signInWithCustomToken, 
+  signInWithEmailAndPassword,
+  signOut,
   onAuthStateChanged 
 } from 'firebase/auth';
 import { 
@@ -26,23 +24,20 @@ import {
   Loader2,
   Store,
   History,
-  Clock,
   ChevronRight,
   PackageCheck,
   XCircle,
   Phone,
   RefreshCcw,
-  Zap,
   Search,
-  AlertCircle,
   BellRing,
   WifiOff,
   MapPin,
-  AlertTriangle,
-  CheckIcon,
   DollarSign,
   Package,
-  User
+  User,
+  LogOut,
+  Clock
 } from 'lucide-react';
 
 // --- CONFIGURATION FIREBASE ---
@@ -55,6 +50,7 @@ const firebaseConfig = {
   "appId": "1:1007988352826:web:1b1ce84d1554b08756d203",
   "measurementId": "G-1PEVCF443T"
 };
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -151,50 +147,46 @@ const getDefaultCSResponse = (reason, source) => {
 };
 
 const App = () => {
-  const [user, setUser] = useState(null);
+  const [authUser, setAuthUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [connectionError, setConnectionError] = useState(false);
 
-  const [formData, setFormData] = useState({ orderId: '', source: 'Livreur', reason: '', name: '' });
+  const [formData, setFormData] = useState({ orderId: '', source: 'Livreur', reason: '', livreurName: '' });
   const [responseInput, setResponseInput] = useState({ id: null, text: '', action: '', agentName: '' });
   const [expandedTickets, setExpandedTickets] = useState({});
 
-  // Déterminer la vue depuis l'URL
-  const getViewFromPath = () => {
-    if (typeof window === 'undefined') return 'support';
-    const path = window.location.pathname;
-    if (path.includes('/livreur')) return 'livreur';
-    if (path.includes('/support')) return 'support';
-    return 'support'; // défaut
-  };
-
-  const [view] = useState(getViewFromPath());
-
-  // 1. Authentification avec Retry
+  // Auth State Listener
   useEffect(() => {
-    const initAuth = async (retries = 5, delay = 1000) => {
-      try {
-        await signInAnonymously(auth);
-      } catch (e) {
-        if (retries > 0) {
-          setTimeout(() => initAuth(retries - 1, delay * 2), delay);
-        } else {
-          setConnectionError(true);
-          setLoading(false);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        setAuthUser(currentUser);
+        try {
+          const userDoc = await getDoc(doc(db, 'magasins', currentUser.uid));
+          if (userDoc.exists()) {
+            setUserProfile(userDoc.data());
+          }
+        } catch (e) {
+          console.error('Erreur chargement profil:', e);
         }
+      } else {
+        setAuthUser(null);
+        setUserProfile(null);
       }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+      setLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  // 2. Temps réel Firestore
+  // Firestore Tickets Listener
   useEffect(() => {
-    if (!user) return;
+    if (!authUser) return;
     
     const ticketsCollection = collection(db, 'artifacts', appId, 'public', 'data', 'tickets');
     
@@ -207,30 +199,52 @@ const App = () => {
           return timeB - timeA;
         });
         setRequests(sorted);
-        setLoading(false);
         setConnectionError(false);
       }, 
       (error) => {
         console.error("Firestore Error:", error);
-        if (error.code === 'unavailable') {
-          setConnectionError(true);
-        }
-        setLoading(false);
+        setConnectionError(true);
       }
     );
 
     return () => unsubscribe();
-  }, [user]);
+  }, [authUser]);
+
+  // Handle Login
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+    setLoginLoading(true);
+
+    try {
+      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+    } catch (error) {
+      setLoginError('Email ou mot de passe incorrect');
+      console.error(error);
+    }
+    setLoginLoading(false);
+  };
+
+  // Handle Logout
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setLoginEmail('');
+      setLoginPassword('');
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   const handleCSResponse = async (docId, reason, source) => {
-    if (!user || !responseInput.text.trim() || !responseInput.action || !responseInput.agentName.trim()) return;
+    if (!authUser || !responseInput.text.trim() || !responseInput.action) return;
     try {
       const ticketRef = doc(db, 'artifacts', appId, 'public', 'data', 'tickets', docId);
       await updateDoc(ticketRef, {
         status: 'replied',
         csResponse: responseInput.text,
         csAction: responseInput.action,
-        agentName: responseInput.agentName,
+        agentName: userProfile?.name,
         respondedAt: serverTimestamp()
       });
       setResponseInput({ id: null, text: '', action: '', agentName: '' });
@@ -238,7 +252,7 @@ const App = () => {
   };
 
   const markResolved = async (docId) => {
-    if (!user) return;
+    if (!authUser) return;
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', docId), { 
         status: 'resolved', 
@@ -254,21 +268,76 @@ const App = () => {
     }));
   };
 
-  if (loading) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
-      <Loader2 className="animate-spin text-orange-500" size={48} />
-      <p className="text-slate-400 font-black uppercase text-xs tracking-widest">Initialisation Sécurisée...</p>
-    </div>
-  );
+  // === PAGE LOGIN ===
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
+        <Loader2 className="animate-spin text-orange-500" size={48} />
+        <p className="text-slate-400 font-black uppercase text-xs tracking-widest">Chargement...</p>
+      </div>
+    );
+  }
 
-  if (connectionError && !requests.length) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
-      <WifiOff className="text-slate-300 mb-4" size={64} />
-      <h2 className="text-xl font-black text-slate-800 uppercase italic">Problème de connexion</h2>
-      <p className="text-slate-500 text-sm max-w-xs mt-2">Impossible de joindre le serveur. Vérifiez votre connexion internet ou réessayez dans quelques instants.</p>
-      <button onClick={() => window.location.reload()} className="mt-6 bg-slate-900 text-white px-8 py-3 rounded-xl font-black text-xs uppercase tracking-widest">Réessayer</button>
-    </div>
-  );
+  if (!authUser) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
+        <div className="bg-white rounded-[3rem] shadow-2xl p-8 w-full max-w-md">
+          <div className="flex items-center justify-center gap-3 mb-8">
+            <div className="bg-orange-500 p-3 rounded-lg"><ShieldCheck size={28}/></div>
+            <h1 className="text-3xl font-black uppercase italic">Flash-Control</h1>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-6">
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">EMAIL MAGASIN</label>
+              <input 
+                type="email"
+                value={loginEmail}
+                onChange={e => setLoginEmail(e.target.value)}
+                className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold border-2 border-transparent focus:border-orange-500 outline-none"
+                placeholder="magasin@bringo.com"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">MOT DE PASSE</label>
+              <input 
+                type="password"
+                value={loginPassword}
+                onChange={e => setLoginPassword(e.target.value)}
+                className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold border-2 border-transparent focus:border-orange-500 outline-none"
+                placeholder="••••••••"
+                required
+              />
+            </div>
+
+            {loginError && (
+              <div className="p-4 bg-red-50 border-2 border-red-200 rounded-2xl text-[12px] font-black text-red-700 uppercase">
+                ⚠️ {loginError}
+              </div>
+            )}
+
+            <button 
+              type="submit"
+              disabled={loginLoading}
+              className={`w-full py-5 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all ${loginLoading ? 'bg-slate-200 text-slate-400' : 'bg-orange-500 text-white shadow-xl hover:bg-orange-600'}`}
+            >
+              {loginLoading ? 'CONNEXION...' : 'CONNEXION'}
+            </button>
+          </form>
+
+          <p className="text-center text-[10px] text-slate-400 mt-6">
+            Créez votre compte magasin dans Firebase Console
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // === PAGE PRINCIPALE (CONNECTÉ) ===
+  const isMagasin = userProfile?.role === 'magasin';
+  const isSupport = userProfile?.role === 'support';
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-10">
@@ -276,10 +345,21 @@ const App = () => {
       <nav className="bg-slate-900 text-white p-4 flex justify-between items-center sticky top-0 z-50 shadow-xl">
         <div className="flex items-center gap-3">
           <div className="bg-orange-500 p-1.5 rounded-lg"><ShieldCheck size={20}/></div>
-          <span className="font-black tracking-tighter text-xl uppercase italic">Flash-Control</span>
+          <span className="font-black tracking-tighter text-xl uppercase italic hidden sm:inline">Flash-Control</span>
         </div>
-        <div className="text-[12px] font-black text-orange-400 uppercase tracking-widest">
-          {view === 'livreur' ? '🚚 TERMINAL TERRAIN' : '💬 SUPPORT CLIENT'}
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest">
+              {isMagasin ? '🏪 MAGASIN' : isSupport ? '💬 SUPPORT' : ''}
+            </p>
+            <p className="text-[12px] font-black text-white">{userProfile?.name}</p>
+          </div>
+          <button 
+            onClick={handleLogout}
+            className="p-3 bg-red-600 hover:bg-red-700 rounded-xl transition-all"
+          >
+            <LogOut size={18}/>
+          </button>
         </div>
       </nav>
 
@@ -291,7 +371,7 @@ const App = () => {
 
       <div className="max-w-6xl mx-auto p-4 md:p-8">
         {/* === VUE SUPPORT CLIENT === */}
-        {view === 'support' && (
+        {isSupport && (
           <div className="space-y-6">
             <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3 italic uppercase tracking-tighter">
               <MessageSquare className="text-orange-500" size={28}/> File de Décision
@@ -304,25 +384,29 @@ const App = () => {
               </div>
             ) : (
               requests.filter(r => r.status === 'pending' || r.status === 'replied').map(req => (
-                <div key={req.docId} className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl relative overflow-hidden mb-6">
+                <div key={req.docId} className="bg-white p-6 md:p-8 rounded-[2.5rem] border border-slate-200 shadow-xl relative overflow-hidden mb-6">
                   <div className={`absolute top-0 right-0 px-6 py-2 text-[10px] font-black uppercase text-white ${req.source === 'Livreur' ? 'bg-indigo-600' : 'bg-blue-600'}`}>
                      {req.source}
                   </div>
-                  <div className="flex justify-between items-start mb-6">
+                  <div className="flex flex-col md:flex-row justify-between items-start mb-6 gap-4">
                     <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Store size={14} className="text-slate-400"/>
+                        <span className="text-xs font-black text-slate-500">{req.magasinName}</span>
+                      </div>
                       <div className="flex items-center gap-2 mb-2">
                         <User size={14} className="text-slate-400"/>
-                        <span className="text-xs font-black text-slate-500">{req.name}</span>
+                        <span className="text-xs font-black text-slate-500">{req.livreurName}</span>
                       </div>
                       <span className="text-xs font-black text-orange-500 bg-orange-50 px-2 py-1 rounded">CMD #{req.orderId}</span>
-                      <h3 className="text-2xl font-black text-slate-900 mt-2">{req.reason}</h3>
+                      <h3 className="text-xl md:text-2xl font-black text-slate-900 mt-2">{req.reason}</h3>
                     </div>
                     <button onClick={() => markResolved(req.docId)} className="p-3 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all"><CheckCircle2/></button>
                   </div>
 
                   <div className="space-y-4">
                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-[11px]">
-                      <p className="text-slate-600 font-bold italic">💡 Suggestion contextuelle :</p>
+                      <p className="text-slate-600 font-bold italic">💡 Suggestion :</p>
                       <p className="text-slate-700 font-black mt-2">{getDefaultCSResponse(req.reason, req.source)}</p>
                     </div>
 
@@ -333,18 +417,13 @@ const App = () => {
                       onChange={e => setResponseInput({ ...responseInput, id: req.docId, text: e.target.value })}
                     />
 
-                    <div className="bg-slate-50 p-5 rounded-[1.5rem] border-2 border-slate-100 focus-within:border-orange-500 transition-all">
-                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">NOM DE L'AGENT</label>
-                      <input 
-                        value={responseInput.id === req.docId ? responseInput.agentName : ''} 
-                        onChange={e => setResponseInput({ ...responseInput, id: req.docId, agentName: e.target.value })} 
-                        className="w-full bg-transparent font-black text-lg outline-none" 
-                        placeholder="Votre nom"
-                      />
+                    <div className="bg-emerald-50 p-5 rounded-[1.5rem] border-2 border-emerald-200">
+                      <label className="text-[10px] font-black text-emerald-600 uppercase block mb-2">✓ AGENT</label>
+                      <p className="font-black text-lg text-emerald-900">{userProfile?.name}</p>
                     </div>
                     
                     <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase mb-3">Actions recommandées</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase mb-3">Actions</p>
                       <div className="flex flex-wrap gap-2">
                         {getActionsForReason(req.reason, req.source).map(act => (
                           <button 
@@ -355,7 +434,7 @@ const App = () => {
                               action: act.label,
                               agentName: responseInput.id === req.docId ? responseInput.agentName : ''
                             })}
-                            className={`px-4 py-3 rounded-xl text-[9px] font-black border-2 transition-all ${
+                            className={`px-3 py-2 rounded-xl text-[9px] font-black border-2 transition-all ${
                               (responseInput.id === req.docId ? responseInput.action : req.csAction) === act.label 
                                 ? 'bg-slate-900 border-slate-900 text-white shadow-lg' 
                                 : 'bg-white border-slate-100 text-slate-500 hover:border-slate-300'
@@ -369,8 +448,8 @@ const App = () => {
 
                     <button 
                       onClick={() => handleCSResponse(req.docId, req.reason, req.source)}
-                      disabled={responseInput.id !== req.docId || !responseInput.text.trim() || !responseInput.action || !responseInput.agentName.trim()}
-                      className={`w-full py-5 rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all ${responseInput.id === req.docId && responseInput.text.trim() && responseInput.action && responseInput.agentName.trim() ? 'bg-orange-500 text-white shadow-xl' : 'bg-slate-100 text-slate-300'}`}
+                      disabled={responseInput.id !== req.docId || !responseInput.text.trim() || !responseInput.action}
+                      className={`w-full py-5 rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all ${responseInput.id === req.docId && responseInput.text.trim() && responseInput.action ? 'bg-orange-500 text-white shadow-xl' : 'bg-slate-100 text-slate-300'}`}
                     >
                       Envoyer au Terrain
                     </button>
@@ -381,89 +460,95 @@ const App = () => {
           </div>
         )}
 
-        {/* === VUE TERMINAL TERRAIN === */}
-        {view === 'livreur' && (
-          <div className="grid md:grid-cols-2 gap-8 items-start">
-            <div className="bg-white p-8 rounded-[3rem] shadow-xl border border-slate-100 sticky top-24 h-fit">
-              <h2 className="text-2xl font-black mb-8 italic uppercase text-slate-900 tracking-tighter">Signalement</h2>
-              <div className="space-y-6">
-                <div className="bg-slate-50 p-5 rounded-[1.5rem] border-2 border-slate-100 focus-within:border-blue-500 transition-all">
-                  <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">VOTRE NOM</label>
-                  <input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-transparent font-black text-lg outline-none" placeholder="Nom"/>
-                </div>
+        {/* === VUE MAGASIN/LIVREUR === */}
+        {isMagasin && (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3 italic uppercase tracking-tighter">
+              <Truck className="text-orange-500" size={28}/> Mes Incidents
+            </h2>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <button onClick={() => setFormData({...formData, source: 'Livreur', reason: ''})} className={`py-5 rounded-[1.5rem] text-[11px] font-black border-2 transition-all ${formData.source === 'Livreur' ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 border-slate-50'}`}>LIVREUR</button>
-                  <button onClick={() => setFormData({...formData, source: 'Magasin', reason: ''})} className={`py-5 rounded-[1.5rem] text-[11px] font-black border-2 transition-all ${formData.source === 'Magasin' ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 border-slate-50'}`}>MAGASIN</button>
-                </div>
-                <div className="bg-slate-50 p-5 rounded-[1.5rem] border-2 border-slate-100 focus-within:border-blue-500 transition-all">
-                  <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">N° COMMANDE</label>
-                  <input value={formData.orderId} onChange={e => setFormData({...formData, orderId: e.target.value})} className="w-full bg-transparent font-black text-2xl outline-none" placeholder="00000"/>
-                </div>
-                <div className="space-y-3">
-                  {reasonsBySource[formData.source]?.map(r => (
-                    <button key={r} onClick={() => setFormData({...formData, reason: r})} className={`w-full text-left p-6 rounded-[1.5rem] text-sm font-black border-2 transition-all flex items-center justify-between ${formData.reason === r ? 'bg-slate-900 border-slate-900 text-white shadow-xl' : 'bg-white border-slate-100 text-slate-600 hover:border-slate-200'}`}>
-                      {r} <ChevronRight size={18}/>
-                    </button>
-                  ))}
-                </div>
-                <button onClick={async () => {
-                  if(!user || !formData.reason || !formData.orderId || !formData.name.trim()) return;
-                  try {
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), { ...formData, status: 'pending', timestamp: serverTimestamp() });
-                    setFormData({ orderId: '', source: 'Livreur', reason: '', name: formData.name });
-                  } catch (e) { console.error(e); }
-                }} className={`w-full py-6 rounded-[2rem] font-black text-xs uppercase tracking-[0.3em] transition-all ${formData.reason && formData.orderId && formData.name.trim() ? 'bg-blue-600 text-white shadow-2xl' : 'bg-slate-100 text-slate-200'}`}>Envoyer au Support</button>
+            <div className="bg-white p-6 md:p-8 rounded-[2.5rem] shadow-xl border border-slate-100 space-y-6">
+              <h3 className="text-xl font-black italic uppercase text-slate-900">Nouveau Signalement</h3>
+              
+              <div className="bg-slate-50 p-5 rounded-[1.5rem] border-2 border-slate-100 focus-within:border-blue-500 transition-all">
+                <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">NOM LIVREUR/PRÉPARATEUR</label>
+                <input value={formData.livreurName} onChange={e => setFormData({...formData, livreurName: e.target.value})} className="w-full bg-transparent font-black text-lg outline-none" placeholder="Nom Prénom"/>
               </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <button onClick={() => setFormData({...formData, source: 'Livreur', reason: ''})} className={`py-5 rounded-[1.5rem] text-[11px] font-black border-2 transition-all ${formData.source === 'Livreur' ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 border-slate-50'}`}>LIVREUR</button>
+                <button onClick={() => setFormData({...formData, source: 'Magasin', reason: ''})} className={`py-5 rounded-[1.5rem] text-[11px] font-black border-2 transition-all ${formData.source === 'Magasin' ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 border-slate-50'}`}>MAGASIN</button>
+              </div>
+
+              <div className="bg-slate-50 p-5 rounded-[1.5rem] border-2 border-slate-100 focus-within:border-blue-500 transition-all">
+                <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">N° COMMANDE</label>
+                <input value={formData.orderId} onChange={e => setFormData({...formData, orderId: e.target.value})} className="w-full bg-transparent font-black text-2xl outline-none" placeholder="00000"/>
+              </div>
+
+              <div className="space-y-3">
+                {reasonsBySource[formData.source]?.map(r => (
+                  <button key={r} onClick={() => setFormData({...formData, reason: r})} className={`w-full text-left p-6 rounded-[1.5rem] text-sm font-black border-2 transition-all flex items-center justify-between ${formData.reason === r ? 'bg-slate-900 border-slate-900 text-white shadow-xl' : 'bg-white border-slate-100 text-slate-600 hover:border-slate-200'}`}>
+                    {r} <ChevronRight size={18}/>
+                  </button>
+                ))}
+              </div>
+
+              <button onClick={async () => {
+                if(!authUser || !formData.reason || !formData.orderId || !formData.livreurName.trim()) return;
+                try {
+                  await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), { 
+                    ...formData, 
+                    magasinName: userProfile.name,
+                    status: 'pending', 
+                    timestamp: serverTimestamp() 
+                  });
+                  setFormData({ orderId: '', source: 'Livreur', reason: '', livreurName: formData.livreurName });
+                } catch (e) { console.error(e); }
+              }} className={`w-full py-6 rounded-[2rem] font-black text-xs uppercase tracking-[0.3em] transition-all ${formData.reason && formData.orderId && formData.livreurName.trim() ? 'bg-blue-600 text-white shadow-2xl' : 'bg-slate-100 text-slate-200'}`}>Envoyer au Support</button>
             </div>
-            
+
+            {/* Réponses */}
             <div className="space-y-6">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-4 italic"><History size={16}/> Réponses en Temps Réel</h3>
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-4 italic"><History size={16}/> Mes Réponses</h3>
               <div className="space-y-4">
-                {requests.filter(r => r.name === formData.name).slice(0, 10).map(req => (
-                  <div key={`${req.docId}-${req.status}`} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-xl overflow-hidden transition-all duration-500">
-                    <div className="flex justify-between items-center mb-4">
-                      <div className="flex items-center gap-2">
-                         <span className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${req.source === 'Livreur' ? 'bg-purple-500' : 'bg-blue-500'}`}>{req.source === 'Livreur' ? <Truck size={14}/> : <Store size={14}/>}</span>
-                         <span className="text-[10px] font-black text-slate-400 tracking-tighter">CMD #{req.orderId}</span>
+                {requests.filter(r => r.magasinName === userProfile?.name && (r.status === 'pending' || r.status === 'replied')).map(req => (
+                  <div key={`${req.docId}`} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-xl overflow-hidden">
+                    <div className="flex justify-between items-start mb-4 gap-2">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400">
+                          {req.livreurName}
+                        </p>
+                        <span className="text-[10px] font-black text-slate-400">CMD #{req.orderId}</span>
+                        <h4 className="text-lg md:text-xl font-black text-slate-800 mt-1">{req.reason}</h4>
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase ${req.csResponse ? 'bg-emerald-500 text-white animate-bounce' : 'bg-slate-100 text-slate-400'}`}>
-                        {req.csResponse ? 'RÉPONSE DISPONIBLE' : 'ANALYSE EN COURS'}
+                      <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase whitespace-nowrap ${req.csResponse ? 'bg-emerald-500 text-white animate-bounce' : 'bg-slate-100 text-slate-400'}`}>
+                        {req.csResponse ? '✓ RÉP' : 'EN ATTENTE'}
                       </span>
                     </div>
 
-                    <h4 className="text-xl font-black text-slate-800 mb-2">{req.reason}</h4>
-                    
                     {req.csResponse ? (
-                      <div className="mt-4 pt-4 border-t-2 border-dashed border-slate-100 bg-emerald-50/30 -mx-6 px-6 pb-6 animate-in fade-in zoom-in duration-500">
-                        <div className="flex items-center gap-2 mb-3 mt-2">
+                      <div className="mt-4 pt-4 border-t-2 border-dashed border-slate-100 bg-emerald-50/30 -mx-6 px-6 pb-6 space-y-4">
+                        <div className="flex items-center gap-2">
                           <BellRing size={16} className="text-emerald-600"/>
-                          <div>
-                            <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Réponse de {req.agentName || 'Support'}</p>
-                          </div>
+                          <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Réponse de {req.agentName || 'Support'}</p>
                         </div>
                         
-                        <div className="bg-white p-5 rounded-2xl mb-4 border-2 border-emerald-100 shadow-sm relative">
+                        <div className="bg-white p-4 rounded-2xl border-2 border-emerald-100 shadow-sm">
                            <p className="text-sm font-bold text-slate-700 leading-relaxed italic">"{req.csResponse}"</p>
-                           <div className="absolute -top-2 -right-2 bg-emerald-500 text-white p-1 rounded-full shadow-lg"><CheckCircle2 size={12}/></div>
                         </div>
                         
-                        <div className={`w-full py-5 px-4 rounded-2xl text-[11px] font-black border-2 transition-all flex items-center justify-center gap-3 shadow-xl ${
+                        <div className={`w-full py-4 px-4 rounded-2xl text-[11px] font-black border-2 transition-all flex items-center justify-center gap-2 shadow-xl ${
                              ['COMMANDE ANNULEA', 'OK POUR ANNULER'].includes(req.csAction) ? 'bg-red-600 border-red-600 text-white' : 
                              ['PREPARER COMMANDE', 'RELIVRER ASAP', 'REPASSER COMMANDE'].includes(req.csAction) ? 'bg-emerald-600 border-emerald-600 text-white' : 
                              'bg-slate-900 border-slate-900 text-white'
                         }`}>
-                             {req.csAction === 'APPELER CLIENT' && <Phone size={18}/>}
-                             {req.csAction === 'REPASSER COMMANDE' && <RefreshCcw size={18}/>}
-                             {req.csAction === 'COMMANDE ANNULEA' && <XCircle size={18}/>}
-                             {req.csAction === 'PREPARER COMMANDE' && <PackageCheck size={18}/>}
-                             <span className="uppercase tracking-[0.1em] text-lg font-black">{req.csAction}</span>
+                             {req.csAction && <span className="uppercase tracking-[0.1em] font-black">{req.csAction}</span>}
                         </div>
                       </div>
                     ) : (
                       <div className="mt-4 flex items-center justify-center gap-3 py-4 bg-slate-50 rounded-2xl border border-slate-100">
                         <Loader2 size={16} className="animate-spin text-slate-300"/>
-                        <p className="text-[11px] font-bold text-slate-400 italic">Analyse Support en cours...</p>
+                        <p className="text-[11px] font-bold text-slate-400 italic">Analyse Support...</p>
                       </div>
                     )}
                   </div>
