@@ -7,8 +7,7 @@ import {
   onSnapshot, 
   addDoc, 
   updateDoc,
-  serverTimestamp,
-  getDoc
+  serverTimestamp
 } from 'firebase/firestore';
 import { 
   getAuth, 
@@ -28,13 +27,10 @@ import {
   PackageCheck,
   XCircle,
   Phone,
-  RefreshCcw,
   Search,
   BellRing,
-  WifiOff,
   MapPin,
   DollarSign,
-  Package,
   User,
   LogOut,
   Clock
@@ -56,6 +52,14 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'flash-control-v5';
 
+// --- UTILISATEURS HARDCODÉS ---
+const USERS = {
+  'ayoub.kodhi@bringo.com': { name: 'Ayoub Kodhi', role: 'support' },
+  'fatima.khouja@bringo.com': { name: 'Fatima Khouja', role: 'support' },
+  'mouad.bennani@bringo.com': { name: 'Mouad Bennani', role: 'support' },
+  'livreur@bringo.com': { name: 'Livreur Test', role: 'magasin' },
+};
+
 // --- MOTIFS PAR SOURCE ---
 const reasonsBySource = {
   "Livreur": [
@@ -75,55 +79,55 @@ const reasonsBySource = {
 const getActionsForReason = (reason, source) => {
   if (source === "Magasin" || reason === "Rupture / Annulation Client") {
     return [
-      { label: "COMMANDE ANNULEE", color: "red", icon: "XCircle" },
-      { label: "CHERCHER SUBST.", color: "slate", icon: "Search" },
-      { label: "APPELER CLIENT", color: "slate", icon: "Phone" }
+      { label: "COMMANDE ANNULEE" },
+      { label: "CHERCHER SUBST." },
+      { label: "APPELER CLIENT" }
     ];
   }
 
   const actionMap = {
     "Client injoignable": [
-      { label: "APPELER CLIENT", color: "slate", icon: "Phone" },
-      { label: "RELIVRER ASAP", color: "emerald", icon: "Truck" },
-      { label: "LAISSER AVIS", color: "slate", icon: "BellRing" },
-      { label: "OK POUR ANNULER", color: "red", icon: "XCircle" }
+      { label: "APPELER CLIENT" },
+      { label: "RELIVRER ASAP" },
+      { label: "LAISSER AVIS" },
+      { label: "OK POUR ANNULER" }
     ],
     "Paiement en ligne à effectuer": [
-      { label: "APPELER CLIENT", color: "slate", icon: "Phone" },
-      { label: "RELANCER PAIEMENT", color: "slate", icon: "DollarSign" },
-      { label: "RELIVRER ASAP", color: "emerald", icon: "Truck" },
-      { label: "OK POUR ANNULER", color: "red", icon: "XCircle" }
+      { label: "APPELER CLIENT" },
+      { label: "RELANCER PAIEMENT" },
+      { label: "RELIVRER ASAP" },
+      { label: "OK POUR ANNULER" }
     ],
     "Adresse incorrecte / Hors zone": [
-      { label: "APPELER CLIENT", color: "slate", icon: "Phone" },
-      { label: "RELOCALISER LIVR.", color: "slate", icon: "MapPin" },
-      { label: "RELIVRER ASAP", color: "emerald", icon: "Truck" },
-      { label: "OK POUR ANNULER", color: "red", icon: "XCircle" }
+      { label: "APPELER CLIENT" },
+      { label: "RELOCALISER LIVR." },
+      { label: "RELIVRER ASAP" },
+      { label: "OK POUR ANNULER" }
     ],
     "Article manquant": [
-      { label: "CHERCHER SUBST.", color: "slate", icon: "Search" },
-      { label: "APPELER CLIENT", color: "slate", icon: "Phone" },
-      { label: "PREPARER COMMANDE", color: "emerald", icon: "PackageCheck" },
-      { label: "OK POUR ANNULER", color: "red", icon: "XCircle" }
+      { label: "CHERCHER SUBST." },
+      { label: "APPELER CLIENT" },
+      { label: "PREPARER COMMANDE" },
+      { label: "OK POUR ANNULER" }
     ],
     "Problème facturation / Montant": [
-      { label: "APPELER CLIENT", color: "slate", icon: "Phone" },
-      { label: "VERIFIER MONTANT", color: "slate", icon: "DollarSign" },
-      { label: "RELIVRER ASAP", color: "emerald", icon: "Truck" },
-      { label: "OK POUR ANNULER", color: "red", icon: "XCircle" }
+      { label: "APPELER CLIENT" },
+      { label: "VERIFIER MONTANT" },
+      { label: "RELIVRER ASAP" },
+      { label: "OK POUR ANNULER" }
     ],
     "Retard livraison prévu": [
-      { label: "APPELER CLIENT", color: "slate", icon: "Phone" },
-      { label: "RELANCER PREP.", color: "slate", icon: "Clock" },
-      { label: "RELIVRER ASAP", color: "emerald", icon: "Truck" },
-      { label: "OK POUR ANNULER", color: "red", icon: "XCircle" }
+      { label: "APPELER CLIENT" },
+      { label: "RELANCER PREP." },
+      { label: "RELIVRER ASAP" },
+      { label: "OK POUR ANNULER" }
     ]
   };
 
   return actionMap[reason] || [
-    { label: "APPELER CLIENT", color: "slate", icon: "Phone" },
-    { label: "RELIVRER ASAP", color: "emerald", icon: "Truck" },
-    { label: "OK POUR ANNULER", color: "red", icon: "XCircle" }
+    { label: "APPELER CLIENT" },
+    { label: "RELIVRER ASAP" },
+    { label: "OK POUR ANNULER" }
   ];
 };
 
@@ -159,28 +163,20 @@ const App = () => {
   const [connectionError, setConnectionError] = useState(false);
 
   const [formData, setFormData] = useState({ orderId: '', source: 'Livreur', reason: '', livreurName: '' });
-  const [responseInput, setResponseInput] = useState({ id: null, text: '', action: '', agentName: '' });
-  const [expandedTickets, setExpandedTickets] = useState({});
+  const [responseInput, setResponseInput] = useState({ id: null, text: '', action: '' });
 
   // Auth State Listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      console.log('Auth User:', currentUser?.uid);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
         setAuthUser(currentUser);
-        try {
-          const userDoc = await getDoc(doc(db, 'Stores', currentUser.uid));
-          console.log('Firestore Doc exists:', userDoc.exists());
-          console.log('Firestore Doc data:', userDoc.data());
-          if (userDoc.exists()) {
-            setUserProfile(userDoc.data());
-          } else {
-            console.error('Document does not exist for UID:', currentUser.uid);
-            setUserProfile(null);
-          }
-        } catch (e) {
-          console.error('Erreur chargement profil:', e);
-          setUserProfile(null);
+        // Utiliser l'email pour trouver le profil
+        const profile = USERS[currentUser.email];
+        if (profile) {
+          setUserProfile(profile);
+        } else {
+          setLoginError('Utilisateur non reconnu. Contactez l\'admin.');
+          signOut(auth);
         }
       } else {
         setAuthUser(null);
@@ -193,37 +189,30 @@ const App = () => {
 
   // Firestore Tickets Listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      console.log('Auth User ID:', currentUser?.uid);
-      
-      if (currentUser) {
-        setAuthUser(currentUser);
-        try {
-          // On pointe bien sur 'Stores' avec la majuscule
-          const userDocRef = doc(db, 'Stores', currentUser.uid);
-          const userDoc = await getDoc(userDocRef);
-
-          if (userDoc.exists()) {
-            console.log('Profil trouvé :', userDoc.data());
-            setUserProfile(userDoc.data());
-          } else {
-            // Si l'ID est en italique dans Firebase, on arrive ici
-            console.error('ID reconnu par Auth mais absent de Firestore:', currentUser.uid);
-            setUserProfile(null);
-            // Optionnel : vous pourriez ajouter un setDoc ici pour créer le profil
-          }
-        } catch (e) {
-          console.error('Erreur technique Firestore:', e);
-          setUserProfile(null);
-        }
-      } else {
-        setAuthUser(null);
-        setUserProfile(null);
+    if (!authUser) return;
+    
+    const ticketsCollection = collection(db, 'artifacts', appId, 'public', 'data', 'tickets');
+    
+    const unsubscribe = onSnapshot(ticketsCollection, 
+      (snapshot) => {
+        const docs = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+        const sorted = docs.sort((a, b) => {
+          const timeA = a.timestamp?.seconds || 0;
+          const timeB = b.timestamp?.seconds || 0;
+          return timeB - timeA;
+        });
+        setRequests(sorted);
+        setConnectionError(false);
+      }, 
+      (error) => {
+        console.error("Firestore Error:", error);
+        setConnectionError(true);
       }
-      setLoading(false);
-    });
+    );
+
     return () => unsubscribe();
-  }, []);
+  }, [authUser]);
+
   // Handle Login
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -234,7 +223,6 @@ const App = () => {
       await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
     } catch (error) {
       setLoginError('Email ou mot de passe incorrect');
-      console.error(error);
     }
     setLoginLoading(false);
   };
@@ -261,7 +249,7 @@ const App = () => {
         agentName: userProfile?.name,
         respondedAt: serverTimestamp()
       });
-      setResponseInput({ id: null, text: '', action: '', agentName: '' });
+      setResponseInput({ id: null, text: '', action: '' });
     } catch (e) { console.error(e); }
   };
 
@@ -273,13 +261,6 @@ const App = () => {
         closedAt: serverTimestamp() 
       });
     } catch (e) { console.error(e); }
-  };
-
-  const toggleTicketExpand = (docId) => {
-    setExpandedTickets(prev => ({
-      ...prev,
-      [docId]: !prev[docId]
-    }));
   };
 
   // === PAGE LOGIN ===
@@ -303,13 +284,13 @@ const App = () => {
 
           <form onSubmit={handleLogin} className="space-y-6">
             <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">EMAIL MAGASIN</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">EMAIL</label>
               <input 
                 type="email"
                 value={loginEmail}
                 onChange={e => setLoginEmail(e.target.value)}
                 className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold border-2 border-transparent focus:border-orange-500 outline-none"
-                placeholder="magasin@bringo.com"
+                placeholder="ayoub.kodhi@bringo.com"
                 required
               />
             </div>
@@ -341,9 +322,13 @@ const App = () => {
             </button>
           </form>
 
-          <p className="text-center text-[10px] text-slate-400 mt-6">
-            Créez votre compte magasin dans Firebase Console
-          </p>
+          <div className="mt-6 p-4 bg-slate-100 rounded-2xl text-[10px] text-slate-600">
+            <p className="font-bold mb-2">Comptes de test:</p>
+            <p>📧 ayoub.kodhi@bringo.com</p>
+            <p>📧 fatima.khouja@bringo.com</p>
+            <p>📧 mouad.bennani@bringo.com</p>
+            <p>📧 livreur@bringo.com</p>
+          </div>
         </div>
       </div>
     );
@@ -406,7 +391,7 @@ const App = () => {
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <Store size={14} className="text-slate-400"/>
-                        <span className="text-xs font-black text-slate-500">{req.magasinName}</span>
+                        <span className="text-xs font-black text-slate-500">{req.magasinName || 'Magasin'}</span>
                       </div>
                       <div className="flex items-center gap-2 mb-2">
                         <User size={14} className="text-slate-400"/>
@@ -445,8 +430,7 @@ const App = () => {
                             onClick={() => setResponseInput({ 
                               id: req.docId, 
                               text: responseInput.id === req.docId ? responseInput.text : (req.csResponse || ''), 
-                              action: act.label,
-                              agentName: responseInput.id === req.docId ? responseInput.agentName : ''
+                              action: act.label
                             })}
                             className={`px-3 py-2 rounded-xl text-[9px] font-black border-2 transition-all ${
                               (responseInput.id === req.docId ? responseInput.action : req.csAction) === act.label 
@@ -553,7 +537,7 @@ const App = () => {
                         
                         <div className={`w-full py-4 px-4 rounded-2xl text-[11px] font-black border-2 transition-all flex items-center justify-center gap-2 shadow-xl ${
                              ['COMMANDE ANNULEA', 'OK POUR ANNULER'].includes(req.csAction) ? 'bg-red-600 border-red-600 text-white' : 
-                             ['PREPARER COMMANDE', 'RELIVRER ASAP', 'REPASSER COMMANDE'].includes(req.csAction) ? 'bg-emerald-600 border-emerald-600 text-white' : 
+                             ['PREPARER COMMANDE', 'RELIVRER ASAP'].includes(req.csAction) ? 'bg-emerald-600 border-emerald-600 text-white' : 
                              'bg-slate-900 border-slate-900 text-white'
                         }`}>
                              {req.csAction && <span className="uppercase tracking-[0.1em] font-black">{req.csAction}</span>}
