@@ -509,8 +509,8 @@ const App = () => {
             <div className="space-y-6">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-4 italic"><History size={16}/> Mes Réponses</h3>
               <div className="space-y-4">
-                {requests.filter(r => r.magasinName === userProfile?.name && (r.status === 'pending' || r.status === 'replied')).map(req => (
-                  <div key={`${req.docId}`} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-xl overflow-hidden">
+                {requests.filter(r => r.magasinName === userProfile?.name && (r.status === 'pending' || r.status === 'replied' || r.status === 'resolved')).map(req => (
+                  <div key={`${req.docId}-${req.status}-${req.csResponse ? 'replied' : 'pending'}`} className={`bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-xl overflow-hidden ${req.status === 'resolved' ? 'opacity-60' : ''}`}>
                     <div className="flex justify-between items-start mb-4 gap-2">
                       <div>
                         <p className="text-[10px] font-black text-slate-400">
